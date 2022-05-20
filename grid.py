@@ -1,6 +1,18 @@
 from mpi4py import MPI
 
 print(MPI.COMM_WORLD) # ensure MPI works ?
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+if rank == 0:
+	print('this is a grid')
+	pass
+	
+else:
+	print('this is a piece of the board')
+	pass
+
+
 
 config = {
     'size' : 10,
@@ -8,6 +20,9 @@ config = {
     'shark' : 'X',
     'fish' : '0'
 }
+
+
+
 
 class Grid:
 
