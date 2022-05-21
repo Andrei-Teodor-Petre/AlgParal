@@ -1,10 +1,13 @@
 from __future__ import annotations
+import enum
 import string
 from turtle import pos
 
 import pygame
 import time
 import math
+
+from scipy import rand
 from utils import scale_image, blit_rotate_center
 
 import numpy as np
@@ -16,24 +19,40 @@ from scipy.special import comb
 from matplotlib import cm
 from mpi4py import MPI
 
+from enum import Enum
+
+
 import uuid 
+
+
+class Type(Enum):
+	OCEAN = 0
+	SHARK = 1
+	FISH  = 2
 
 class Position:
 	def __init__(self,x,y):
 		self.x = x
 		self.y = y
 
-class Ocean:
-	pass
+
+
 
 class Agent:
 		
-	def __init__(self, posi: Position, ocean: Ocean, image: pygame.Surface, type: str = None):
+	def __init__(self, posi: Position, _rank: int, image: pygame.Surface, type: Type = None):
 		
 		self.Id = uuid.uuid4()
-		self.position = posi
-		
+
+		self.rank = _rank
 		self.img = image
+
+		if image == SHARK:
+			self.type = Type.SHARK
+		else:
+			self.type = Type.FISH
+
+		self.position = posi
 		self.destination = None
 
 		self.max_velocity = 4
@@ -42,9 +61,12 @@ class Agent:
 		self.velocity_Y = 0
 		self.alignment_error = 40
 
+		#this can be counted in while cycles
+		self.age = 0
+
+
 
 	def get_position(self):
-		#we need this so other drones can reference it
 		return self.position
 	
 	def move_to_position(self, destination: Position):
@@ -115,8 +137,15 @@ class Agent:
 		self.decelerateOX()
 		self.decelerateOY()
 		self.move()
-			
 
+
+#nush daca avem nevoie de astea dar le stergem la sf daca nu le folosim
+class Ocean(Agent):
+	pass
+class Shark(Agent):
+	pass
+class Fish(Agent):
+	pass
 	
 def reached_destination(position: Position, destination: Position, alignment_error: int) -> bool :
 	if( abs(position.x - destination.x) < alignment_error  and abs(position.y - destination.y) < alignment_error):
@@ -137,16 +166,18 @@ def draw(win, images, Drones):
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
+OCEAN = scale_image(pygame.image.load("imgs/ocean.jpg"), 1.5)
+
+SHARK = scale_image(pygame.image.load("imgs/shark.png"), 0.1)
+FISH = scale_image(pygame.image.load("imgs/fish.png"), 0.03)
+
 if rank == 0:
 
-	OCEAN = scale_image(pygame.image.load("imgs/ocean.jpg"), 2.5)
 
-	SHARK = scale_image(pygame.image.load("imgs/shark.png"), 0.1)
-	FISH = scale_image(pygame.image.load("imgs/fish.png"), 0.03)
 
-	WIDTH, HEIGHT = 1000, 1000
+	WIDTH, HEIGHT = 1600, 1000
 	WIN = pygame.display.set_mode((WIDTH, HEIGHT))
-	pygame.display.set_caption("Drone simulation")
+	pygame.display.set_caption("Sharks and fish simulation")
 
 	FPS = 60
 
@@ -154,12 +185,7 @@ if rank == 0:
 	clock = pygame.time.Clock()
 	images = [(OCEAN, (0, 0))]
 
-	shark = Agent(Position(180, 200), Ocean(), SHARK,0)
-	fish1 = Agent(Position(150, 250), Ocean(), FISH,1)
-	fish2 = Agent(Position(250, 250), Ocean(), FISH,7)
-	fish3 = Agent(Position(350, 250), Ocean(), FISH,3)
-
-	Agents = [shark, fish1, fish2, fish3]
+	Agents = []
 
 	while run:
 		try:
@@ -172,40 +198,17 @@ if rank == 0:
 				if event.type == pygame.QUIT:
 					run = False
 					break
-
+			
 			keys = pygame.key.get_pressed()
 			moved = False
 
-			if keys[pygame.K_a] or keys[pygame.K_LEFT] or keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-				if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-					shark.accelerateRight()
-					moved = True
-				if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-					shark.accelerateLeft()
-					moved = True
-			else:
-				shark.decelerateOX()
+			#broadcast alive and dead status
 
-			if keys[pygame.K_w] or keys[pygame.K_UP] or keys[pygame.K_s] or keys[pygame.K_DOWN]:	
-				if keys[pygame.K_w] or keys[pygame.K_UP]:
-					shark.accelerateUp()
-					moved = True
-				if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-					shark.accelerateDown()
-					moved = True
-			else:
-				shark.decelerateOY()
+			#listen for shit
 
-			# for drone_index in range(1,len(Agents)):
-			# 	if(Agents[drone_index].aligned):
-			# 		Agents[drone_index].align_to_leader_speed()
-			# 	else:
-			# 		Agents[drone_index].align_to_leader()
+			#process
 
-
-
-			if not moved:
-				shark.decelerate()
+			#send shit back
 
 
 		except BaseException as err:
@@ -214,21 +217,60 @@ if rank == 0:
 
 	pygame.quit()
 
-elif rank % 10 == 0:
+elif rank % 23 == 0:
 	# shark 
-	# se instantiaza un agent cu pozitii random pe ocean (cu conditia sa fie libere i.e apa nu un agent existent)
+	# se instantiaza un agent -> shark cu pozitii random pe ocean (cu conditia sa fie libere i.e apa nu un agent existent)
+	randx = random.randint(0,1599)
+	randy = random.randint(0,999)
+	rank = comm.Get_rank()
+	shark = Agent(Position(randx, randy),rank,SHARK)	
+	
 	# comunica cu ocean
+
+	
 	# while liveCond
+	while True:
+		#get alive status -> if dead maybe spawn again idk, ca sa nu irosim procesul ca nush how the fuck mai instantiem altele dupa comanda initiala din terminal
+
+
+		#get nearest shark
+
+
+		#update internal position away from it
+
+
+		#comm the position to the ocean
+
+		pass
 		# are un set de reguli dupa care traieste
 		# un movement function + toate compunerile cu exteriorul (gravitatie, nearest neighbors etc.)
 
-	pass
-
-else: 
-	# se instantiaza un agent cu pozitii random pe ocean (cu conditia sa fie libere i.e apa nu un agent existent)
+else:
+	#fish
+	# se instantiaza un agent -> fish cu pozitii random pe ocean (cu conditia sa fie libere i.e apa nu un agent existent)
+	randx = random.randint(0,1599)
+	randy = random.randint(0,999)
+	rank = comm.Get_rank()
+	shark = Agent(Position(randx, randy),rank,FISH)	
 	# comunica cu ocean
+	comm.Isend(shark,0)
+
+
+
 	# while liveCond
+	while True:
+		#get alive status -> if dead maybe spawn again idk, ca sa nu irosim procesul ca nush how the fuck mai instantiem altele dupa comanda initiala din terminal
+
+
+		#get nearest shark
+
+
+		#update internal position away from it
+
+
+		#comm the position to the ocean
+
+		pass
 		# are un set de reguli dupa care traieste
 		# un movement function + toate compunerile cu exteriorul (gravitatie, nearest neighbors etc.)
-	pass
 
