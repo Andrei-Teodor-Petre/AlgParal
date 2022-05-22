@@ -76,24 +76,32 @@ class Agent:
 		self.current_age += 1
 
 	def can_breed(self) -> bool:
-		return False
 		if self.type is AgentTypes.SHARK:
-			return self.current_age >= 9
+			return False
 		elif self.type is AgentTypes.FISH:
-			return self.current_age >= 3
+			return self.current_age >= 10 #and random.randint(0, 9) == 7
 
 	def should_die(self) -> bool:
-		return False
 		if self.type is AgentTypes.SHARK:
-			return self.current_age > 27
+			if self.fish_collision():
+				self.current_age -= 10
+			return self.current_age > 100
 		elif self.type is AgentTypes.FISH:
-			return self.current_age > 9 or self.shark_collision()
+			return self.shark_collision()
+
+	def fish_collision(self) -> bool:
+		if self.external_factors is not None:
+			for factor in self.external_factors:
+				agent_type, position = factor
+				if agent_type is AgentTypes.FISH and calculate_distance(position, self.position) <= 50:
+					return True
+		return False
 
 	def shark_collision(self) -> bool:
 		if self.external_factors is not None:
 			for factor in self.external_factors:
 				agent_type, position = factor
-				if agent_type is AgentTypes.SHARK and self.reached_destination(position, 5):
+				if agent_type is AgentTypes.SHARK and calculate_distance(position, self.position) <= 50:
 					return True
 		return False
 
@@ -366,9 +374,10 @@ if rank == 0:
 
 			req = comm.irecv(source=MPI.ANY_SOURCE)
 			response = req.wait()
-			rank, data = response
+			rank, data, deleted_agents, epoch = response
 			print('Got msg from rank', rank, ':', len(data), ' agents')
 
+			print('Ocean Epoch: ', epoch)
 			print('Num agents BEFORE update: ', len(agents))
 			for datum in data:
 				if isinstance(datum, Agent):
@@ -376,6 +385,11 @@ if rank == 0:
 				else:
 					print('Unknown agent')
 			print('Num agents AFTER update: ', len(agents))
+
+			for deleted_agent in deleted_agents:
+				if isinstance(deleted_agent, Agent):
+					if deleted_agent.id in agents.keys():
+						agents.pop(deleted_agent.id)
 
 			external_factors = []
 			for agent in agents.values():
@@ -424,27 +438,31 @@ if rank == 0:
 
 	pygame.quit()
 
-elif rank % 3 == 0:
+elif rank % 9 == 0:
 
 	epoch = 1
 	rank = comm.Get_rank()
 	sharks = [Agent(Position(random.randint(0,WIDTH - 1), random.randint(0,HEIGHT - 1)),rank,AgentTypes.SHARK)]
+	deleted_sharks = []
 
 	while True:
 
-		req = comm.isend((rank, sharks), 0)
+		req = comm.isend((rank, sharks, deleted_sharks, epoch), 0)
 		req.wait()
 
 		for shark in sharks:
 			print('EPOCH ', epoch)
 			shark.age()
+			shark.move_to_position(Position(random.randint(0,WIDTH - 1), random.randint(0,HEIGHT - 1)))
 			if shark.should_die():
 				sharks.remove(shark)
+				deleted_sharks.append(shark)
 			elif shark.can_breed():
 				print(f'SHARK FROM RANK {rank} CAN BREED')
 				current_pos = shark.get_position()
 				sharks.append(Agent(Position(current_pos.x + 50, current_pos.y + 50),rank,AgentTypes.SHARK))
-			shark.move_to_position(Position(random.randint(0,WIDTH - 1), random.randint(0,HEIGHT - 1)))
+			
+		epoch += 1
 			
 
 else:
@@ -452,23 +470,25 @@ else:
 	epoch = 1
 	rank = comm.Get_rank()
 	fish = [Agent(Position(random.randint(0,WIDTH - 1), random.randint(0,HEIGHT - 1)),rank,AgentTypes.FISH)]
+	deleted_fish = []
 
 	while True:
 
-		req = comm.isend((rank, fish), 0)
+		req = comm.isend((rank, fish, deleted_fish, epoch), 0)
 		req.wait()
+
+		if len(fish) == 0:
+			print('NO MORE FISH / REFRESHING')
+			fish.append(Agent(Position(random.randint(0,WIDTH - 1), random.randint(0,HEIGHT - 1)),rank,AgentTypes.FISH))
+			
 
 		for f in fish:
 			print('EPOCH ', epoch)
 			f.age()
+			f.move_to_position(Position(random.randint(0,WIDTH - 1), random.randint(0,HEIGHT - 1)))
 			if f.should_die():
 				fish.remove(f)
-			elif f.can_breed():
-				print(f'FISH FROM RANK {rank} CAN BREED')
-				current_pos = f.get_position()
-				fish.append(Agent(Position(current_pos.x + 50, current_pos.y + 50),rank,AgentTypes.FISH))
-			f.move_to_position(Position(random.randint(0,WIDTH - 1), random.randint(0,HEIGHT - 1)))
-
+				deleted_fish.append(f)
 			
+		epoch += 1
 
-		
