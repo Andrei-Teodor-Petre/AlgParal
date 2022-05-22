@@ -2,6 +2,7 @@ from __future__ import annotations
 import enum
 import string
 from turtle import pos
+from typing import Dict
 
 import pygame
 import time
@@ -25,7 +26,7 @@ from enum import Enum
 import uuid 
 
 
-class Type(Enum):
+class AgentTypes(Enum):
 	OCEAN = 0
 	SHARK = 1
 	FISH  = 2
@@ -35,22 +36,20 @@ class Position:
 		self.x = x
 		self.y = y
 
-
-
+class Payload:
+	def __init__(self, id: uuid.UUID, type: AgentTypes):
+		self.id = id
+		self.type = type
 
 class Agent:
 		
-	def __init__(self, posi: Position, _rank: int, image: pygame.Surface, type: Type = None):
+	def __init__(self, posi: Position, rank: int, type: AgentTypes):
 		
-		self.Id = uuid.uuid4()
+		self.id = uuid.uuid4()
 
-		self.rank = _rank
-		self.img = image
+		self.rank = rank
 
-		if image == SHARK:
-			self.type = Type.SHARK
-		else:
-			self.type = Type.FISH
+		self.type = type
 
 		self.position = posi
 		self.destination = None
@@ -64,7 +63,10 @@ class Agent:
 		#this can be counted in while cycles
 		self.age = 0
 
-
+	def get_payload(self) -> Payload:
+		# data passed around through comm
+		# should return everything that node 0 (i.e the OCEAN) needs to display a simulation itteration
+		return Payload(self.id, self.type)
 
 	def get_position(self):
 		return self.position
@@ -86,7 +88,14 @@ class Agent:
 
 		
 	def draw(self, win):
-		blit_rotate_center(win, self.img, (self.position.x, self.position.y), 0)
+		img = None
+		if self.type is AgentTypes.SHARK:
+			img = SHARK
+		elif self.type is AgentTypes.FISH:
+			img = FISH
+		if img is None:
+			raise Exception('Unknown img type for agent', self.id)
+		blit_rotate_center(win, img, (self.position.x, self.position.y), 0)
 
 
 	def move(self):
@@ -152,30 +161,29 @@ def reached_destination(position: Position, destination: Position, alignment_err
 		return True
 	return False
 
-def draw(win, images, Drones):
+def draw(win, images, agents: Dict[uuid.UUID, Agent]):
 	for img, pos in images:
 		win.blit(img, pos)
 
-	for drn in Drones:
-		drn.draw(win)
+	for agent in agents.values():
+		agent.draw(win)
 	pygame.display.update()
-
-
 
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-OCEAN = scale_image(pygame.image.load("imgs/ocean.jpg"), 1.5)
+OCEAN = scale_image(pygame.image.load("imgs/ocean.jpg"), 1)
 
-SHARK = scale_image(pygame.image.load("imgs/shark.png"), 0.1)
+SHARK = scale_image(pygame.image.load("imgs/shark.png"), 0.15)
 FISH = scale_image(pygame.image.load("imgs/fish.png"), 0.03)
+
+def update_agent(current_agent: Agent, updated_agent: Agent):
+	current_agent.move_to_position(updated_agent.get_position())
 
 if rank == 0:
 
-
-
-	WIDTH, HEIGHT = 1600, 1000
+	WIDTH, HEIGHT = 1024, 768
 	WIN = pygame.display.set_mode((WIDTH, HEIGHT))
 	pygame.display.set_caption("Sharks and fish simulation")
 
@@ -185,14 +193,26 @@ if rank == 0:
 	clock = pygame.time.Clock()
 	images = [(OCEAN, (0, 0))]
 
-	Agents = []
+	agents: Dict[uuid.UUID, Agent] = {}
 
 	while run:
 		try:
 			
+			req = comm.irecv(source=MPI.ANY_SOURCE)
+			data = req.wait()
+
+			if isinstance(data, Agent):
+				if data.id in agents.keys():
+					update_agent(current_agent=agents[data.id], updated_agent=data)
+				else:
+					agents[data.id] = data
+			else:
+				# unknown shit
+				pass
+
 			clock.tick(FPS)
 
-			draw(WIN, images, Agents)
+			draw(WIN, images, agents)
 
 			for event in pygame.event.get():
 				if event.type == pygame.QUIT:
@@ -217,29 +237,32 @@ if rank == 0:
 
 	pygame.quit()
 
-elif rank % 23 == 0:
+elif rank % 3 == 0:
 	# shark 
 	# se instantiaza un agent -> shark cu pozitii random pe ocean (cu conditia sa fie libere i.e apa nu un agent existent)
 	randx = random.randint(0,1599)
 	randy = random.randint(0,999)
 	rank = comm.Get_rank()
-	shark = Agent(Position(randx, randy),rank,SHARK)	
-	
+	shark = Agent(Position(randx, randy),rank,AgentTypes.SHARK)	
 	# comunica cu ocean
 
-	
 	# while liveCond
 	while True:
+
+		pos = shark.get_position()
+		shark.move_to_position(Position(pos.x + 1, pos.y))
 		#get alive status -> if dead maybe spawn again idk, ca sa nu irosim procesul ca nush how the fuck mai instantiem altele dupa comanda initiala din terminal
 
-
 		#get nearest shark
-
 
 		#update internal position away from it
 
 
 		#comm the position to the ocean
+
+		#payload = shark.get_payload()
+		req = comm.isend(shark, 0)
+		req.wait()
 
 		pass
 		# are un set de reguli dupa care traieste
@@ -251,24 +274,26 @@ else:
 	randx = random.randint(0,1599)
 	randy = random.randint(0,999)
 	rank = comm.Get_rank()
-	shark = Agent(Position(randx, randy),rank,FISH)	
+	fish = Agent(Position(randx, randy),rank,AgentTypes.FISH)	
 	# comunica cu ocean
-	comm.Isend(shark,0)
-
-
+	
 
 	# while liveCond
 	while True:
-		#get alive status -> if dead maybe spawn again idk, ca sa nu irosim procesul ca nush how the fuck mai instantiem altele dupa comanda initiala din terminal
 
+		pos = fish.get_position()
+		fish.move_to_position(Position(pos.x + 1, pos.y))
+		#get alive status -> if dead maybe spawn again idk, ca sa nu irosim procesul ca nush how the fuck mai instantiem altele dupa comanda initiala din terminal
 
 		#get nearest shark
 
-
 		#update internal position away from it
 
-
 		#comm the position to the ocean
+
+		#payload = fish.get_payload()
+		req = comm.isend(fish, 0)
+		req.wait()
 
 		pass
 		# are un set de reguli dupa care traieste
