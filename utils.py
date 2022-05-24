@@ -1,13 +1,12 @@
-import pygame
+import math
+from agent import Position
 
 
-def scale_image(img, factor):
-    size = round(img.get_width() * factor), round(img.get_height() * factor)
-    return pygame.transform.scale(img, size)
+def calculate_distance(pos1: Position, pos2: Position):
+	return math.sqrt( (pos2.x - pos1.x)**2 + (pos2.y - pos1.y) **2 )
 
 
-def blit_rotate_center(win, image, top_left, angle):
-    rotated_image = pygame.transform.rotate(image, angle)
-    new_rect = rotated_image.get_rect(
-        center=image.get_rect(topleft=top_left).center)
-    win.blit(rotated_image, new_rect.topleft)
+def reached_destination(self, destination: Position, alignment_error: int) -> bool:
+	if( abs(self.position.x - destination.x) < alignment_error  and abs(self.position.y - destination.y) < alignment_error):
+		return True
+	return False
